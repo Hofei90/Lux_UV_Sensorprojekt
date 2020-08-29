@@ -96,13 +96,29 @@ void setup() {
   //veml.interruptEnable(true);
 }
 
-void messwerte_schreiben(){
-  lux_g = veml.readLux();
+
+float calculation_lux(float lux){
+  Serial.println("Calc Lux");
+  float x = lux;
+  Serial.print("Raw Lux: ");
+  Serial.println(lux);
+  float lux_calc = (0.000000003 * pow(x, 3)) + (0.000003 * pow(x, 2)) + (1.0564 * x) - 30.803;
+  return lux_calc;
+}
+
+
+void messwerte_schreiben(bool calc){
+  if (calc == true){
+    lux_g = calculation_lux(veml.readLux());
+  } else {
+    lux_g = veml.readLux();
+  }
   white_g = veml.readWhite();
   als_g = veml.readALS();
 }
 
-void messung_starten(){
+
+void veml7700_messung_starten(){
   // TODO: Sensor standby - was ist standby?
   veml.enable(false);
   set_integration_time(IT);
@@ -125,37 +141,38 @@ void messung_starten(){
         IT = 4;
       }
       if (IT == 4){
-        messwerte_schreiben();
+        messwerte_schreiben(false);
       } else {
         Serial.println("Starte 1");
-        messung_starten();
+        veml7700_messung_starten();
       }
     } else {
       Serial.println("Starte 2");
-      messung_starten();
+      veml7700_messung_starten();
     }
   } else {
     // rechter Bereich von Seite 24 pdf mouser
     if (als > 10000){
       IT = IT - 1;
       if (IT == -2){
-        messwerte_schreiben();
+        messwerte_schreiben(false);  // normal true lt. Datenblatt, hier kommen aber dann teilweise - Werte raus.
       } else {
         Serial.println("Starte 3");
         // Hier kommt mir die Zeichnung unpassend vor, es muss doch erst neu gemessen werden?!
-        messung_starten(); // Eigene Abänderung
+        veml7700_messung_starten(); // Eigene Abänderung
       }
     } else {
-      messwerte_schreiben();
+      messwerte_schreiben(false);  // normal true lt. Datenblatt, hier kommen aber dann teilweise - Werte raus.
     }
   }    
 }
 
 
 void loop() {
+  // VEML7700
   G = 1;
   IT = 0;
-  messung_starten();
+  veml7700_messung_starten();
   Serial.print("Lux: "); Serial.println(lux_g);
   Serial.print("White: "); Serial.println(white_g);
   Serial.print("Raw ALS: "); Serial.println(als_g);
