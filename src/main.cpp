@@ -12,6 +12,9 @@
 #include <Wire.h>
 #endif
 
+#include <ESP8266WiFi.h>
+#include <config.h>
+
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
@@ -72,6 +75,23 @@ void set_integration_time(int IT){
 }
 
 
+void connect_to_wlan() {
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+  delay(500);
+  Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+
 void setup() {
   u8g2.begin();
   u8g2.enableUTF8Print();		// enable UTF8 support for the Arduino print() function
@@ -91,9 +111,7 @@ void setup() {
   veml.powerSaveEnable(true);
   veml.setPowerSaveMode(VEML7700_POWERSAVE_MODE3);
 
-  //veml.setLowThreshold(10000);
-  //veml.setHighThreshold(20000);
-  //veml.interruptEnable(true);
+  connect_to_wlan();
 }
 
 
