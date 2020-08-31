@@ -13,8 +13,16 @@
 #endif
 
 #include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #include <config.h>
 
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+long lastMsg = 0;
+char msg[50];
+int value = 0;
+const char* mqtt_server = "abc";
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
@@ -76,6 +84,8 @@ void set_integration_time(int IT){
 
 
 void connect_to_wlan() {
+  #ifdef ssid
+  #ifdef password
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.mode(WIFI_STA);
@@ -89,6 +99,8 @@ void connect_to_wlan() {
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+  #endif
+  #endif
 }
 
 
@@ -112,6 +124,7 @@ void setup() {
   veml.setPowerSaveMode(VEML7700_POWERSAVE_MODE3);
 
   connect_to_wlan();
+  client.setServer(mqtt_server, 1833);
 }
 
 
@@ -120,8 +133,12 @@ float calculation_lux(float lux){
   float x = lux;
   Serial.print("Raw Lux: ");
   Serial.println(lux);
-  float lux_calc = (0.000000003 * pow(x, 3)) + (0.000003 * pow(x, 2)) + (1.0564 * x) - 30.803;
-  return lux_calc;
+  float lux_calc = (1E-09 * pow(x, 3)) + (3E-06 * pow(x, 2)) + (1.0564 * x) - 30.803;
+  if (lux_calc < lux){
+    return lux;
+  } else {
+    return lux_calc;
+  }
 }
 
 
@@ -173,14 +190,14 @@ void veml7700_messung_starten(){
     if (als > 10000){
       IT = IT - 1;
       if (IT == -2){
-        messwerte_schreiben(false);  // normal true lt. Datenblatt, hier kommen aber dann teilweise - Werte raus.
+        messwerte_schreiben(true);  // normal true lt. Datenblatt, hier kommen aber dann teilweise - Werte raus.
       } else {
         Serial.println("Starte 3");
         // Hier kommt mir die Zeichnung unpassend vor, es muss doch erst neu gemessen werden?!
         veml7700_messung_starten(); // Eigene Abänderung
       }
     } else {
-      messwerte_schreiben(false);  // normal true lt. Datenblatt, hier kommen aber dann teilweise - Werte raus.
+      messwerte_schreiben(true);  // normal true lt. Datenblatt, hier kommen aber dann teilweise - Werte raus.
     }
   }    
 }
@@ -209,6 +226,10 @@ void loop() {
     u8g2.println(als_g);
   } while ( u8g2.nextPage() );
   veml.enable(false);
+  client.loop();
+  snprintf (msg, 50, "%f", lux_g);
+  Serial.println(msg);
+  //client.publish("sensoreinheit/1/lux", msg);
   delay(1000);
   // Später aktivieren wenn kein Display mehr im Einsatz ist und dafür das delay eine Zeile darüber entfernen
   // ESP.deepSleep(2E6);
