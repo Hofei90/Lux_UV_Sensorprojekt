@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include "Adafruit_VEML7700.h"
+#include <SparkFun_VEML6075_Arduino_Library.h>
 
 #include <U8g2lib.h>
 
@@ -12,7 +13,13 @@
 #include <Wire.h>
 #endif
 
-#include <ESP8266WiFi.h>
+#define SDA1 21
+#define SCL1 22
+
+#define SDA2 18
+#define SCL2 19
+
+#include <WiFi.h>
 #include <PubSubClient.h>
 #include <config.h>
 
@@ -25,7 +32,9 @@ int value = 0;
 const char* mqtt_server = "abc";
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+//U8G2_SSD1306_128X64_NONAME_1_2ND_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
+VEML6075 uv;
 
 int G;
 int IT;
@@ -88,7 +97,6 @@ void connect_to_wlan() {
   #ifdef password
   Serial.print("Connecting to ");
   Serial.println(ssid);
-  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
   delay(500);
@@ -103,13 +111,58 @@ void connect_to_wlan() {
   #endif
 }
 
+void scan1(){
+Serial.println("Scanning I2C Addresses Channel 1");
+uint8_t cnt=0;
+for(uint8_t i=0;i<128;i++){
+  Wire.beginTransmission(i);
+  uint8_t ec=Wire.endTransmission(true);
+  if(ec==0){
+    if(i<16)Serial.print('0');
+    Serial.print(i,HEX);
+    cnt++;
+  }
+  else Serial.print("..");
+  Serial.print(' ');
+  if ((i&0x0f)==0x0f)Serial.println();
+  }
+Serial.print("Scan Completed, ");
+Serial.print(cnt);
+Serial.println(" I2C Devices found.");
+}
+
+void scan2(){
+Serial.println("Scanning I2C Addresses Channel 2");
+uint8_t cnt=0;
+for(uint8_t i=0;i<128;i++){
+  Wire1.beginTransmission(i);
+  uint8_t ec=Wire1.endTransmission(true);
+  if(ec==0){
+    if(i<16)Serial.print('0');
+    Serial.print(i,HEX);
+    cnt++;
+  }
+  else Serial.print("..");
+  Serial.print(' ');
+  if ((i&0x0f)==0x0f)Serial.println();
+  }
+Serial.print("Scan Completed, ");
+Serial.print(cnt);
+Serial.println(" I2C Devices found.");
+}
+
 
 void setup() {
   u8g2.begin();
   u8g2.enableUTF8Print();		// enable UTF8 support for the Arduino print() function
 
   Serial.begin(115200);
+  Wire.begin(); 
+  Wire1.begin(SDA2,SCL2,400000);
   delay(100);
+  scan1();
+  scan2();
+
   Serial.println("Adafruit VEML7700 Test");
 
   if (!veml.begin()) {
@@ -118,6 +171,13 @@ void setup() {
   }
 
   Serial.println("Sensor found");
+  
+
+  if (!uv.begin(Wire1)){
+    Serial.println("Unable to communicate with VEML6075.");
+    while (1)
+      ;
+  }
 
 
   veml.powerSaveEnable(true);
@@ -230,6 +290,9 @@ void loop() {
   snprintf (msg, 50, "%f", lux_g);
   Serial.println(msg);
   //client.publish("sensoreinheit/1/lux", msg);
+  Serial.println(String(uv.a()) + ", " + String(uv.b()) + ", " +
+                 String(uv.uvComp1()) + ", " + String(uv.uvComp2()) + ", " +
+                 String(uv.index()));
   delay(1000);
   // Später aktivieren wenn kein Display mehr im Einsatz ist und dafür das delay eine Zeile darüber entfernen
   // ESP.deepSleep(2E6);
