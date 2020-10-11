@@ -69,8 +69,8 @@ float UVA_G;
 float UVB_G;
 
 
-const int solarPin = 2;
-const int batteriePin = 4;
+const int solarPin = 32;
+const int batteriePin = 33;
 float batterie_spannung;
 float solar_spannung;
 
@@ -342,10 +342,9 @@ void setup() {
   uv.setIntegrationTime(VEML6075::IT_100MS);
   uv.setHighDynamic(VEML6075::DYNAMIC_NORMAL);
 
-  if (wlan){
-    connect_to_wlan();
-    client.setServer(mqtt_server, 1833);
-  }
+  connect_to_wlan();
+  client.setServer(mqtt_server, 1833);
+
 }
 
 
