@@ -11,22 +11,26 @@
 
 #define SDA1 21
 #define SCL1 22
-
 #define SDA2 18
 #define SCL2 19
 
 #include <WiFi.h>
+#include <WiFiMulti.h>
+
 #include <PubSubClient.h>
 #include <config.h>
 
+bool IS_WLAN_CONFIG;
+bool IS_MQTT_CONFIG;
 
+WiFiMulti wifiMulti;
 WiFiClient espClient;
 PubSubClient client(espClient);
 long lastMsg = 0;
 char msg[50];
 int value = 0;
-const char* mqtt_server = "abc";
 
+bool DISPLAY_VORHANDEN;
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
 
@@ -73,6 +77,22 @@ const int solarPin = 2;
 const int batteriePin = 4;
 float batterie_spannung;
 float solar_spannung;
+
+
+bool is_i2c_device_connected(int channel, uint8_t address){
+  if (channel == 1){
+    Wire.beginTransmission(address);
+    return Wire.endTransmission(true) == 0;
+  }
+  else if (channel == 2){
+    Wire1.beginTransmission(address);
+    return Wire1.endTransmission(true) == 0;
+  }
+  else  {
+    return false;
+  }
+}
+
 
 void read_gain(){
   Serial.print(F("Gain: "));
@@ -123,18 +143,27 @@ void set_integration_time(int IT_VEML7700){
 
 
 void connect_to_wlan() {
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-  delay(500);
-  Serial.print(".");
+  int counter = 0;
+  Serial.print("Connecting Wifi...");
+  
+  while (wifiMulti.run() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    counter += 1;
+    if (counter > 30){
+      break;
+    }
   }
 
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  if (wifiMulti.run() == WL_CONNECTED){
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+  }
+  else {
+    Serial.println("WiFi not connected!");
+  }
 }
 
 
@@ -313,12 +342,36 @@ float adc_umrechner(float adc){
 
 
 void setup() {
+  #ifdef ssid
+    #ifdef password
+      IS_WLAN_CONFIG = true;
+      wifiMulti.addAP(ssid, password);
+    #else
+      IS_WLAN_CONFIG = false;
+    #endif
+  #else
+    IS_WLAN_CONFIG = false;
+  #endif
+  
+  #ifdef MQTT_BROKER
+    #ifdef MQTT_PORT
+      IS_MQTT_CONFIG = IS_WLAN_CONFIG;
+    #else
+      IS_MQTT_CONFIG = false;
+      int MQTT_PORT = 0
+    #endif
+  #else
+    IS_MQTT_CONFIG = false;
+    const char* MQTT_BROKER = "";
+    const int MQTT_PORT = 0;
+  #endif
+
   u8g2.begin();
   u8g2.enableUTF8Print();		// enable UTF8 support for the Arduino print() function
 
   Serial.begin(115200);
   Wire.begin(); 
-  Wire1.begin(SDA2,SCL2,400000);
+  Wire1.begin(SDA2, SCL2, 400000);
   delay(100);
   scan1();
   scan2();
@@ -342,20 +395,25 @@ void setup() {
   uv.setIntegrationTime(VEML6075::IT_100MS);
   uv.setHighDynamic(VEML6075::DYNAMIC_NORMAL);
 
-  if (wlan){
-    connect_to_wlan();
-    client.setServer(mqtt_server, 1833);
+  DISPLAY_VORHANDEN = is_i2c_device_connected(1, 0x3C);
+
+  if (IS_WLAN_CONFIG == true){
+      connect_to_wlan();
+      if (IS_MQTT_CONFIG == true){
+        client.setServer(MQTT_BROKER, MQTT_PORT);
+      }
   }
 }
 
 
 void loop() {
-
   // VEML7700
   GAIN_VEML7700 = 1;
   IT_VEML7700 = 0;
   veml7700_messung_starten();
   veml6075_messung_starten();
+  veml.enable(false);
+
   solar_spannung = adc_umrechner(analogRead(solarPin));
   batterie_spannung = adc_umrechner(analogRead(batteriePin));
   Serial.println("---------VEML7700---------");
@@ -372,22 +430,29 @@ void loop() {
   Serial.print("Batterie: "); Serial.print(batterie_spannung); Serial.println("V");
   Serial.print("Solar: "); Serial.print(solar_spannung); Serial.println("V");
 
-  u8g2.setFont(u8g2_font_courR14_tf);  
-  u8g2.setFontDirection(0);
-  u8g2.firstPage();
-  do {
-    u8g2.setCursor(0, 15);
-    u8g2.print("Lux: "); u8g2.print(lux_g);
-    u8g2.setCursor(0, 30);
-    u8g2.print("ALS: "); u8g2.println(als_g);
-    u8g2.setCursor(0, 45);
-    u8g2.print("UVI: "); u8g2.println(UVI_G);
-    u8g2.setCursor(0, 60);
-    u8g2.print("A:"); u8g2.print(UVA_G); u8g2.print("B:"); u8g2.println(UVB_G);
-  } while ( u8g2.nextPage() );
-  veml.enable(false);
+  if (IS_MQTT_CONFIG == true){
+    if (wifiMulti.run() == WL_CONNECTED){
+      werte_mqtt_senden();
+    }
+  }
 
-  delay(2000);
-  // Später aktivieren wenn kein Display mehr im Einsatz ist und dafür das delay eine Zeile darüber entfernen
-  // ESP.deepSleep(2E6);
+  if (DISPLAY_VORHANDEN == true) {
+    u8g2.setFont(u8g2_font_courR14_tf);  
+    u8g2.setFontDirection(0);
+    u8g2.firstPage();
+    do {
+      u8g2.setCursor(0, 15);
+      u8g2.print("Lux: "); u8g2.print(lux_g);
+      u8g2.setCursor(0, 30);
+      u8g2.print("ALS: "); u8g2.println(als_g);
+      u8g2.setCursor(0, 45);
+      u8g2.print("UVI: "); u8g2.println(UVI_G);
+      u8g2.setCursor(0, 60);
+      u8g2.print("A:"); u8g2.print(UVA_G); u8g2.print("B:"); u8g2.println(UVB_G);
+    } while ( u8g2.nextPage() );
+    delay(2000);
+  }
+  else {
+    ESP.deepSleep(2E6);
+  }
 }
